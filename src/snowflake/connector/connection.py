@@ -22,11 +22,14 @@ from threading import Lock
 from time import strptime
 from typing import Any, Callable, Generator, Iterable, NamedTuple, Sequence
 
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
+
 from . import errors, proxy
 from .auth import Auth
 from .auth_default import AuthByDefault
 from .auth_idtoken import AuthByIdToken
 from .auth_keypair import AuthByKeyPair
+from .auth_kms import AuthByKMS
 from .auth_oauth import AuthByOAuth
 from .auth_okta import AuthByOkta
 from .auth_usrpwdmfa import AuthByUsrPwdMfa
@@ -77,6 +80,7 @@ from .network import (
     DEFAULT_AUTHENTICATOR,
     EXTERNAL_BROWSER_AUTHENTICATOR,
     KEY_PAIR_AUTHENTICATOR,
+    KMS_AUTHENTICATOR,
     OAUTH_AUTHENTICATOR,
     REQUEST_ID,
     USR_PWD_MFA_AUTHENTICATOR,
@@ -137,6 +141,8 @@ DEFAULT_CONFIGURATION: dict[str, tuple[Any, type | tuple[type, ...]]] = {
     "passcode_in_password": (False, bool),  # Snowflake MFA
     "passcode": (None, (type(None), str)),  # Snowflake MFA
     "private_key": (None, (type(None), str)),
+    "public_key": (None, (type(None), RSAPublicKey)),
+    "key_manager_callback": (None, (type(None), Callable)),
     "token": (None, (type(None), str)),  # OAuth or JWT Token
     "authenticator": (DEFAULT_AUTHENTICATOR, (type(None), str)),
     "mfa_callback": (None, (type(None), Callable)),
@@ -736,6 +742,11 @@ class SnowflakeConnection:
             )
         elif self._authenticator == KEY_PAIR_AUTHENTICATOR:
             auth_instance = AuthByKeyPair(self._private_key)
+        elif self._authenticator == KMS_AUTHENTICATOR:
+            auth_instance = AuthByKMS(
+                self._key_manager_callback,
+                self._public_key
+            )
         elif self._authenticator == OAUTH_AUTHENTICATOR:
             auth_instance = AuthByOAuth(self._token)
         elif self._authenticator == USR_PWD_MFA_AUTHENTICATOR:
@@ -909,6 +920,7 @@ class SnowflakeConnection:
             EXTERNAL_BROWSER_AUTHENTICATOR,
             OAUTH_AUTHENTICATOR,
             KEY_PAIR_AUTHENTICATOR,
+            KMS_AUTHENTICATOR
         ]:
             # authentication is done by the browser if the authenticator
             # is externalbrowser
