@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import abc
 import base64
 import hashlib
 import json
@@ -13,13 +14,8 @@ from calendar import timegm
 from datetime import datetime, timedelta
 from logging import getLogger
 
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
-from cryptography.hazmat.primitives.serialization import (
-    Encoding,
-    PublicFormat,
-    load_der_private_key,
-)
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from .auth_by_plugin import AuthByPlugin
 from .errorcode import (
@@ -45,10 +41,9 @@ class AuthByKMS(AuthByPlugin):
     DEFAULT_JWT_RETRY_ATTEMPTS = 10
     DEFAULT_JWT_CNXN_WAIT_TIME = 10
 
-    def __init__(self, sign, public_key, lifetime_in_seconds: int = LIFETIME):
+    def __init__(self, key_manager, lifetime_in_seconds: int = LIFETIME):
         super().__init__()
-        self._sign = sign
-        self._public_key = public_key
+        self._key_manager = key_manager
         self._jwt_token = ""
         self._jwt_token_exp = 0
         self._lifetime = timedelta(
@@ -119,12 +114,13 @@ class AuthByKMS(AuthByPlugin):
         payload_b64 = base64.b64encode(payload_json)
 
         message = headers_b64 + b'.' + payload_b64
-        signature = self._sign(message)
+        signature = self._key_manager.sign(message)
         return message + b'.' + base64.b64encode(signature)
 
     def calculate_public_key_fingerprint(self):
         # get public key bytes
-        public_key_der = self._public_key.public_bytes(
+        public_key = self._key_manager.public_key()
+        public_key_der = public_key.public_bytes(
             Encoding.DER, PublicFormat.SubjectPublicKeyInfo
         )
 
@@ -180,3 +176,13 @@ class AuthByKMS(AuthByPlugin):
         if op.errno is ER_CONNECTION_TIMEOUT:
             return True
         return False
+
+
+class KeyManager(metaclass=abc.ABCMeta):
+    @abc.abstractmethod
+    def public_key(self) -> RSAPublicKey:
+        pass
+
+    @abc.abstractmethod
+    def sign(message: bytes) -> bytes:
+        pass
